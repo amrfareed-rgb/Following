@@ -142,6 +142,7 @@
                             <th class="py-4 px-6">التاريخ</th>
                             <th class="py-4 px-6">الأهمية</th>
                             <th class="py-4 px-6">الحالة</th>
+                            <th class="py-4 px-6 text-center">المرفقات</th>
                             <th class="py-4 px-6 text-center">إجراءات</th>
                         </tr>
                     </thead>
@@ -198,6 +199,14 @@
                         </select>
                     </div>
                 </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">إرفاق ملف (PDF أو صورة - بحد أقصى 2 ميجابايت)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="file" id="docAttachment" accept=".pdf,image/*" onchange="handleFileSelect(event)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs file:ml-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100">
+                        <button type="button" id="removeAttachmentBtn" onclick="clearAttachment()" class="hidden bg-rose-50 text-rose-600 px-3 py-2 rounded-xl text-xs font-semibold">حذف</button>
+                    </div>
+                    <p id="attachmentStatus" class="text-[11px] text-slate-400 mt-1"></p>
+                </div>
                 <div class="pt-4 flex justify-end gap-2">
                     <button type="button" onclick="closeModal()" class="bg-slate-100 text-slate-700 px-4 py-2 rounded-xl text-xs font-semibold">إلغاء</button>
                     <button type="submit" class="bg-indigo-600 text-white px-5 py-2 rounded-xl text-xs font-semibold">حفظ</button>
@@ -221,15 +230,37 @@
         </div>
     </div>
 
+    <!-- نافذة معاينة المرفقات -->
+    <div id="previewModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-3xl w-full p-6 shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-paperclip text-indigo-600"></i>
+                    <h3 id="previewFileName" class="font-bold text-slate-900 text-sm">معاينة المرفق</h3>
+                </div>
+                <div class="flex items-center gap-2">
+                    <a id="downloadAttachmentLink" download class="bg-indigo-600 text-white px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1">
+                        <i class="fa-solid fa-download"></i> تحميل
+                    </a>
+                    <button onclick="closePreviewModal()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="previewContent" class="flex-1 overflow-auto flex items-center justify-center bg-slate-50 rounded-2xl p-2 min-h-[300px]"></div>
+        </div>
+    </div>
+
     <script>
         const defaultData = [
-            { id: "2026/101", sender: "الموارد البشرية", subject: "اعتماد الخطة التدريبية السنوية", date: "2026-11-12", priority: "هامة", status: "تم الرد" },
-            { id: "2026/102", sender: "الشؤون القانونية", subject: "مراجعة عقود الصيانة الدورية", date: "2026-11-12", priority: "عاجل جداً", status: "قيد الانتظار" },
-            { id: "2026/103", sender: "نظم المعلومات", subject: "تقرير النسخ الاحتياطي للبيانات", date: "2026-11-12", priority: "عادية", status: "تم الرد" }
+            { id: "2026/101", sender: "الموارد البشرية", subject: "اعتماد الخطة التدريبية السنوية", date: "2026-11-12", priority: "هامة", status: "تم الرد", attachment: null },
+            { id: "2026/102", sender: "الشؤون القانونية", subject: "مراجعة عقود الصيانة الدورية", date: "2026-11-12", priority: "عاجل جداً", status: "قيد الانتظار", attachment: null },
+            { id: "2026/103", sender: "نظم المعلومات", subject: "تقرير النسخ الاحتياطي للبيانات", date: "2026-11-12", priority: "عادية", status: "تم الرد", attachment: null }
         ];
 
         let correspondences = JSON.parse(localStorage.getItem('correspondencesData')) || [...defaultData];
         let deleteIndexTarget = null;
+        let currentAttachment = null;
         let statusChartInstance = null;
         let trendChartInstance = null;
 
@@ -240,7 +271,45 @@
         });
 
         function saveDataToLocal() {
-            localStorage.setItem('correspondencesData', JSON.stringify(correspondences));
+            try {
+                localStorage.setItem('correspondencesData', JSON.stringify(correspondences));
+            } catch (e) {
+                document.getElementById('attachmentStatus').innerText = "تنبيه: مساحة التخزين ممتلئة، يرجى تقليل حجم الملفات المرفقة.";
+                document.getElementById('attachmentStatus').className = "text-[11px] text-rose-600 mt-1 font-semibold";
+            }
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            const statusEl = document.getElementById('attachmentStatus');
+            if (!file) return;
+
+            if (file.size > 2 * 1024 * 1024) {
+                statusEl.innerText = "حجم الملف أكبر من 2 ميجابايت! يرجى اختيار ملف أصغر.";
+                statusEl.className = "text-[11px] text-rose-600 mt-1 font-semibold";
+                event.target.value = "";
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                currentAttachment = {
+                    name: file.name,
+                    type: file.type,
+                    data: e.target.result
+                };
+                statusEl.innerText = "تم تجهيز الملف: " + file.name;
+                statusEl.className = "text-[11px] text-emerald-600 mt-1 font-semibold";
+                document.getElementById('removeAttachmentBtn').classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function clearAttachment() {
+            currentAttachment = null;
+            document.getElementById('docAttachment').value = "";
+            document.getElementById('attachmentStatus').innerText = "";
+            document.getElementById('removeAttachmentBtn').classList.add('hidden');
         }
 
         function renderApp() {
@@ -286,6 +355,13 @@
                     <td class="py-4 px-6"><span class="px-2.5 py-1 rounded-lg text-xs font-semibold ${priorityClass}">${item.priority}</span></td>
                     <td class="py-4 px-6"><span class="px-2.5 py-1 rounded-lg text-xs font-semibold ${statusClass}">${item.status}</span></td>
                     <td class="py-4 px-6 text-center">
+                        ${item.attachment 
+                            ? `<button onclick="previewAttachment(${index})" class="inline-flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all">
+                                <i class="fa-solid fa-paperclip"></i> عرض
+                               </button>` 
+                            : `<span class="text-slate-300 text-xs">—</span>`}
+                    </td>
+                    <td class="py-4 px-6 text-center">
                         <div class="flex items-center justify-center gap-2">
                             <button onclick="toggleStatus(${index})" title="تغيير الحالة" class="w-8 h-8 rounded-xl bg-slate-100 hover:text-indigo-600 text-xs"><i class="fa-solid fa-rotate"></i></button>
                             <button onclick="editCorrespondence(${index})" title="تعديل" class="w-8 h-8 rounded-xl bg-slate-100 hover:text-blue-600 text-xs"><i class="fa-solid fa-pen"></i></button>
@@ -313,7 +389,73 @@
             document.getElementById('correspondenceForm').reset();
             document.getElementById('editIndex').value = "";
             document.getElementById('docDate').valueAsDate = new Date();
+            clearAttachment();
             document.getElementById('correspondenceModal').classList.replace('hidden', 'flex');
+        }
+
+        function closeModal() {
+            document.getElementById('correspondenceModal').classList.replace('flex', 'hidden');
+        }
+
+        function saveCorrespondence(e) {
+            e.preventDefault();
+            const editIndex = document.getElementById('editIndex').value;
+            const newItem = {
+                id: document.getElementById('docNumber').value,
+                sender: document.getElementById('docSender').value,
+                subject: document.getElementById('docSubject').value,
+                date: document.getElementById('docDate').value,
+                priority: document.getElementById('docPriority').value,
+                status: document.getElementById('docStatus').value,
+                attachment: currentAttachment
+            };
+            if (editIndex === "") correspondences.unshift(newItem);
+            else correspondences[editIndex] = newItem;
+            closeModal();
+            renderApp();
+        }
+
+        function editCorrespondence(index) {
+            const item = correspondences[index];
+            document.getElementById('modalTitle').innerText = "تعديل مكاتبة";
+            document.getElementById('editIndex').value = index;
+            document.getElementById('docNumber').value = item.id;
+            document.getElementById('docSender').value = item.sender;
+            document.getElementById('docSubject').value = item.subject;
+            document.getElementById('docDate').value = item.date;
+            document.getElementById('docPriority').value = item.priority;
+            document.getElementById('docStatus').value = item.status;
+            clearAttachment();
+            if (item.attachment) {
+                currentAttachment = item.attachment;
+                document.getElementById('attachmentStatus').innerText = "ملف مرفق حالياً: " + item.attachment.name;
+                document.getElementById('attachmentStatus').className = "text-[11px] text-indigo-600 mt-1 font-semibold";
+                document.getElementById('removeAttachmentBtn').classList.remove('hidden');
+            }
+            document.getElementById('correspondenceModal').classList.replace('hidden', 'flex');
+        }
+
+        function previewAttachment(index) {
+            const att = correspondences[index].attachment;
+            if (!att) return;
+            document.getElementById('previewFileName').innerText = att.name;
+            const downloadLink = document.getElementById('downloadAttachmentLink');
+            downloadLink.href = att.data;
+            downloadLink.download = att.name;
+
+            const container = document.getElementById('previewContent');
+            if (att.type.startsWith('image/')) {
+                container.innerHTML = `<img src="${att.data}" class="max-h-[70vh] rounded-xl shadow-sm object-contain">`;
+            } else if (att.type === 'application/pdf') {
+                container.innerHTML = `<iframe src="${att.data}" class="w-full h-[70vh] rounded-xl border-0"></iframe>`;
+            } else {
+                container.innerHTML = `<div class="text-center py-10 text-slate-500 text-sm">لا يمكن معاينة هذا النوع مباشرة، اضغط على زر <b>تحميل</b> بالأعلى.</div>`;
+            }
+            document.getElementById('previewModal').classList.replace('hidden', 'flex');
+        }
+
+        function closePreviewModal() {
+            document.getElementById('previewModal').classList.replace('flex', 'hidden');
         }
 
         function closeModal() {
